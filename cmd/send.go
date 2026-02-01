@@ -15,6 +15,8 @@ func init() {
 
 	sendCmd.Flags().StringP("mac", "m", "", "MAC address of the device to wake up")
 	sendCmd.Flags().StringP("name", "n", "", "Name of the device to wake up")
+	sendCmd.Flags().String("ip", "", "Target IP address to send the packet to (required for WAN)")
+	sendCmd.Flags().String("port", "9", "Target UDP port")
 }
 
 var sendCmd = &cobra.Command{
@@ -60,10 +62,21 @@ var sendCmd = &cobra.Command{
 			log.Fatalf("mac address should come from either --mac or --name")
 		}
 
-		log.Printf("Sending magic packet to %s", mac)
-		mp := magicpacket.NewMagicPacket(mac)
-		if err := mp.Broadcast(); err != nil {
-			cobra.CheckErr(err)
+		ip, _ := cmd.Flags().GetString("ip")
+		port, _ := cmd.Flags().GetString("port")
+
+		if ip != "" {
+			addr := fmt.Sprintf("%s:%s", ip, port)
+			log.Printf("Sending magic packet to %s at %s", mac, addr)
+			if err := sendUnicastMagicPacket(mac, addr); err != nil {
+				cobra.CheckErr(err)
+			}
+		} else {
+			log.Printf("Sending magic packet to %s", mac)
+			mp := magicpacket.NewMagicPacket(mac)
+			if err := mp.Broadcast(); err != nil {
+				cobra.CheckErr(err)
+			}
 		}
 
 		log.Printf("Magic packet sent")
@@ -83,4 +96,23 @@ func getMacByName(name string) (net.HardwareAddr, error) {
 	}
 
 	return nil, fmt.Errorf("machine with name %q not found", name)
+}
+
+func sendUnicastMagicPacket(mac net.HardwareAddr, addr string) error {
+	// 6 bytes of 0xFF
+	packet := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+
+	// 16 repetitions of the MAC
+	for i := 0; i < 16; i++ {
+		packet = append(packet, mac...)
+	}
+
+	conn, err := net.Dial("udp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	_, err = conn.Write(packet)
+	return err
 }

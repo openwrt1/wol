@@ -8,3 +8,4 @@ func main() {
 	// Initialize root command
 	cmd.Execute()
 }
+

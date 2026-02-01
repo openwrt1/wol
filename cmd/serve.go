@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +38,7 @@ var serveCmd = &cobra.Command{
 		mux.HandleFunc("GET /status", handleStatus)
 
 		log.Printf("Listening on %s", cfg.Server.Listen)
-		err := http.ListenAndServe(cfg.Server.Listen, mux)
+		err := http.ListenAndServe(cfg.Server.Listen, authMiddleware(mux))
 		if err != nil {
 			cobra.CheckErr(err)
 		}
@@ -96,7 +98,22 @@ func consumeFlashMessage(w http.ResponseWriter, r *http.Request) string {
 
 func handleWake(w http.ResponseWriter, r *http.Request) {
 	machineName := r.FormValue("name")
-	mac, err := getMacByName(machineName)
+
+	// Find machine config to get IP
+	var machine *config.Machine
+	for _, m := range cfg.Machines {
+		if strings.EqualFold(m.Name, machineName) {
+			machine = &m
+			break
+		}
+	}
+
+	if machine == nil {
+		http.Error(w, "Machine not found", http.StatusBadRequest)
+		return
+	}
+
+	mac, err := net.ParseMAC(machine.Mac)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -104,6 +121,16 @@ func handleWake(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Sending magic packet to %s", mac)
 	mp := magicpacket.NewMagicPacket(mac)
+
+	// If IP is configured, try Unicast (Wake on WAN)
+	if machine.IP != nil && *machine.IP != "" {
+		addr := fmt.Sprintf("%s:9", *machine.IP)
+		log.Printf("Sending unicast packet to %s", addr)
+		if err := mp.Send(addr); err != nil {
+			log.Printf("Error sending unicast packet: %v", err)
+		}
+	}
+
 	if err := mp.Broadcast(); err != nil {
 		log.Printf("Error sending magic packet: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -224,4 +251,16 @@ func isAddressReachable(addr string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, password, ok := r.BasicAuth()
+		if !ok || password != "4056063" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
