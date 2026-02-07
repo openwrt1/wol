@@ -1,0 +1,14 @@
+services:
+  wol:
+    image: ghcr.io/openwrt1/wol:latest
+    container_name: wol
+    command: serve
+    # 关键配置：使用 host 网络模式
+    # 这样容器才能直接向宿主机所在的局域网发送 UDP 广播包 (Magic Packet)
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      # 挂载当前目录下的配置文件到容器内
+      - ./config.yaml:/etc/wol/config.yaml
+    # 如果状态检测(Ping)功能无法工作，尝试取消下面注释开启特权模式
+    # privileged: true
