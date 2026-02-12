@@ -124,7 +124,11 @@ func handleWake(w http.ResponseWriter, r *http.Request) {
 
 	// If IP is configured, try Unicast (Wake on WAN)
 	if machine.IP != nil && *machine.IP != "" {
-		addr := fmt.Sprintf("%s:9", *machine.IP)
+		addr := *machine.IP
+		// If the address doesn't contain a port, default to 9
+		if _, _, err := net.SplitHostPort(addr); err != nil {
+			addr = net.JoinHostPort(addr, "9")
+		}
 		log.Printf("Sending unicast packet to %s", addr)
 		if err := mp.Send(addr); err != nil {
 			log.Printf("Error sending unicast packet: %v", err)

@@ -68,7 +68,8 @@ var sendCmd = &cobra.Command{
 		if ip != "" {
 			addr := fmt.Sprintf("%s:%s", ip, port)
 			log.Printf("Sending magic packet to %s at %s", mac, addr)
-			if err := sendUnicastMagicPacket(mac, addr); err != nil {
+			mp := magicpacket.NewMagicPacket(mac)
+			if err := mp.Send(addr); err != nil {
 				cobra.CheckErr(err)
 			}
 		} else {
@@ -96,23 +97,4 @@ func getMacByName(name string) (net.HardwareAddr, error) {
 	}
 
 	return nil, fmt.Errorf("machine with name %q not found", name)
-}
-
-func sendUnicastMagicPacket(mac net.HardwareAddr, addr string) error {
-	// 6 bytes of 0xFF
-	packet := []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
-
-	// 16 repetitions of the MAC
-	for i := 0; i < 16; i++ {
-		packet = append(packet, mac...)
-	}
-
-	conn, err := net.Dial("udp", addr)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	_, err = conn.Write(packet)
-	return err
 }
